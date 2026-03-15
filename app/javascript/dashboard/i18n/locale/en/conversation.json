@@ -448,5 +448,14 @@
   },
   "GALLERY_VIEW": {
     "ERROR_DOWNLOADING": "Unable to download attachment. Please try again"
+  },
+  "HANDOFF_SUMMARY": {
+    "TITLE": "Handoff summary",
+    "GENERATING": "Generating handoff summary...",
+    "ERROR": "Summary could not be generated. You can still transfer without a summary.",
+    "LIMITED_CONTEXT": "Limited context: not enough messages to generate a full summary.",
+    "CONFIRM_TRANSFER": "Confirm transfer",
+    "CANCEL": "Cancel",
+    "AI_GENERATED": "AI-generated"
   }
 }

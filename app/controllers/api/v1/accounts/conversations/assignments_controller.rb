@@ -1,6 +1,8 @@
 class Api::V1::Accounts::Conversations::AssignmentsController < Api::V1::Accounts::Conversations::BaseController
-  # assigns agent/team to a conversation
+  # assigns agent/team to a conversation; optionally creates handoff summary as private note
   def create
+    create_handoff_note_if_present
+
     if params.key?(:assignee_id) || agent_bot_assignment?
       set_agent
     elsif params.key?(:team_id)
@@ -11,6 +13,16 @@ class Api::V1::Accounts::Conversations::AssignmentsController < Api::V1::Account
   end
 
   private
+
+  def create_handoff_note_if_present
+    return if params[:handoff_summary].blank?
+
+    Conversations::AssignmentService.create_handoff_note(
+      conversation: @conversation,
+      content: params[:handoff_summary],
+      sender: Current.user
+    )
+  end
 
   def set_agent
     resource = Conversations::AssignmentService.new(

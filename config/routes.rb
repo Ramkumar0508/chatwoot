@@ -136,6 +136,7 @@ Rails.application.routes.draw do
                 end
               end
               resources :assignments, only: [:create]
+              resource :handoff_summary, only: [:create], controller: 'handoff_summary'
               resources :labels, only: [:create, :index]
               resource :participants, only: [:show, :create, :update, :destroy]
               resource :direct_uploads, only: [:create]
