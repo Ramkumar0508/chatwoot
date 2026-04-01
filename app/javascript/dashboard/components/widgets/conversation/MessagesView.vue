@@ -8,6 +8,7 @@ import { useSnakeCase } from 'dashboard/composables/useTransformKeys';
 // components
 import ReplyBox from './ReplyBox.vue';
 import MessageList from 'next/message/MessageList.vue';
+import PinnedMessagesPanel from './PinnedMessagesPanel.vue';
 import ConversationLabelSuggestion from './conversation/LabelSuggestion.vue';
 import Banner from 'dashboard/components/ui/Banner.vue';
 import Spinner from 'dashboard/components-next/spinner/Spinner.vue';
@@ -39,6 +40,7 @@ import { INBOX_TYPES } from 'dashboard/helper/inbox';
 export default {
   components: {
     MessageList,
+    PinnedMessagesPanel,
     ReplyBox,
     Banner,
     ConversationLabelSuggestion,
@@ -84,6 +86,9 @@ export default {
       isProgrammaticScroll: false,
       messageSentSinceOpened: false,
       labelSuggestions: [],
+      isLoadingNext: false,
+      anchorLoadError: null,
+      anchorMessageId: null,
     };
   },
 
@@ -251,6 +256,8 @@ export default {
       if (newChat.id === oldChat.id) {
         return;
       }
+      this.anchorMessageId = null;
+      this.anchorLoadError = null;
       this.fetchAllAttachmentsFromCurrentChat();
       this.fetchSuggestions();
       this.messageSentSinceOpened = false;
@@ -325,18 +332,45 @@ export default {
     removeBusListeners() {
       emitter.off(BUS_EVENTS.SCROLL_TO_MESSAGE, this.onScrollToMessage);
     },
-    onScrollToMessage({ messageId = '' } = {}) {
-      this.$nextTick(() => {
-        const messageElement = document.getElementById('message' + messageId);
-        if (messageElement) {
-          this.isProgrammaticScroll = true;
-          messageElement.scrollIntoView({ behavior: 'smooth' });
-          this.fetchPreviousMessages();
-        } else {
-          this.scrollToBottom();
+    async onScrollToMessage({ messageId = '' } = {}) {
+      if (!messageId) return;
+      this.anchorLoadError = null;
+
+      const messageElement = document.getElementById('message' + messageId);
+      if (messageElement) {
+        const idNum = Number(messageId);
+        if (!Number.isNaN(idNum)) {
+          this.anchorMessageId = idNum;
         }
-      });
-      this.makeMessagesRead();
+        this.isProgrammaticScroll = true;
+        messageElement.scrollIntoView({ behavior: 'smooth' });
+        this.makeMessagesRead();
+        return;
+      }
+
+      try {
+        this.anchorMessageId = Number(messageId);
+        await this.$store.dispatch('fetchMessagesAround', {
+          conversationId: this.currentChat.id,
+          messageId: this.anchorMessageId,
+        });
+
+        this.$nextTick(() => {
+          const el = document.getElementById('message' + messageId);
+          if (el) {
+            this.isProgrammaticScroll = true;
+            el.scrollIntoView({ behavior: 'smooth' });
+            if (typeof el.focus === 'function') el.focus();
+          }
+        });
+      } catch {
+        this.anchorLoadError = {
+          conversationId: this.currentChat.id,
+          messageId: Number(messageId),
+        };
+      } finally {
+        this.makeMessagesRead();
+      }
     },
     addScrollListener() {
       this.conversationPanel = this.$el.querySelector('.conversation-panel');
@@ -417,6 +451,41 @@ export default {
       }
     },
 
+    async fetchNextMessages(scrollTop = 0) {
+      if (this.anchorMessageId == null) return;
+      if (this.isLoadingNext) return;
+      if (!this.currentChat?.messages?.length) return;
+
+      const shouldLoadMoreMessages =
+        this.currentChat.dataFetched === true && !this.isLoadingPrevious;
+
+      const nearBottom =
+        this.conversationPanel.scrollHeight -
+          (this.conversationPanel.scrollTop + this.conversationPanel.clientHeight) <
+        100;
+
+      if (!nearBottom || !shouldLoadMoreMessages) return;
+
+      this.isLoadingNext = true;
+      try {
+        const lastId = this.currentChat.messages[this.currentChat.messages.length - 1]?.id;
+        if (!lastId) return;
+        await this.$store.dispatch('fetchNextMessages', {
+          conversationId: this.currentChat.id,
+          after: lastId,
+        });
+      } catch {
+        // ignore (handled by inline retry in anchor mode)
+      } finally {
+        this.isLoadingNext = false;
+      }
+    },
+
+    async retryAnchorLoad() {
+      if (!this.anchorLoadError) return;
+      await this.onScrollToMessage({ messageId: this.anchorLoadError.messageId });
+    },
+
     handleScroll(e) {
       if (this.isProgrammaticScroll) {
         // Reset the flag
@@ -427,6 +496,7 @@ export default {
       }
       emitter.emit(BUS_EVENTS.ON_MESSAGE_LIST_SCROLL);
       this.fetchPreviousMessages(e.target.scrollTop);
+      this.fetchNextMessages(e.target.scrollTop);
     },
 
     makeMessagesRead() {
@@ -456,6 +526,15 @@ export default {
       color-scheme="alert"
       class="mx-2 mt-2 overflow-hidden rounded-lg"
       :banner-message="$t('CONVERSATION.OLD_INSTAGRAM_INBOX_REPLY_BANNER')"
+    />
+    <PinnedMessagesPanel class="mx-2 mt-2" />
+    <Banner
+      v-if="anchorLoadError"
+      color-scheme="alert"
+      class="mx-2 mt-2 overflow-hidden rounded-lg"
+      :banner-message="$t('CONVERSATION.PINNED_MESSAGES.LOAD_CONTEXT_FAILED')"
+      :action-label="$t('CONVERSATION.TRY_AGAIN')"
+      @click="retryAnchorLoad"
     />
     <MessageList
       ref="conversationPanelRef"

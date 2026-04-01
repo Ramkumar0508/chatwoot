@@ -3,6 +3,8 @@ class Api::V1::Accounts::Conversations::MessagesController < Api::V1::Accounts::
 
   def index
     @messages = message_finder.perform
+  rescue ActiveRecord::RecordNotFound
+    render json: { error: 'invalid around_message_id' }, status: :unprocessable_entity
   end
 
   def create
@@ -61,7 +63,11 @@ class Api::V1::Accounts::Conversations::MessagesController < Api::V1::Accounts::
   end
 
   def message_finder
-    @message_finder ||= MessageFinder.new(@conversation, params)
+    @message_finder ||= MessageFinder.new(@conversation, index_params)
+  end
+
+  def index_params
+    params.permit(:after, :before, :filter_internal_messages, :around_message_id, :before_limit, :after_limit)
   end
 
   def permitted_params

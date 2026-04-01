@@ -133,6 +133,27 @@ export default {
       this.$emit('replyTo', this.message);
       this.handleClose();
     },
+    async handlePinMessage() {
+      try {
+        await this.$store.dispatch('pinnedMessages/pin', {
+          conversationId: this.conversationId,
+          messageId: this.messageId,
+        });
+      } catch (error) {
+        const status = error.response?.status;
+        if (status === 422) {
+          useAlert(this.$t('CONVERSATION.CONTEXT_MENU.PIN_LIMIT_REACHED'));
+        }
+      }
+      this.handleClose();
+    },
+    async handleUnpinMessage() {
+      await this.$store.dispatch('pinnedMessages/unpin', {
+        conversationId: this.conversationId,
+        messageId: this.messageId,
+      });
+      this.handleClose();
+    },
     openDeleteModal() {
       this.handleClose();
       this.showDeleteModal = true;
@@ -223,6 +244,24 @@ export default {
           }"
           variant="icon"
           @click.stop="handleTranslate"
+        />
+        <MenuItem
+          v-if="enabledOptions['pin']"
+          :option="{
+            icon: 'document',
+            label: $t('CONVERSATION.CONTEXT_MENU.PIN'),
+          }"
+          variant="icon"
+          @click.stop="handlePinMessage"
+        />
+        <MenuItem
+          v-if="enabledOptions['unpin']"
+          :option="{
+            icon: 'dismiss',
+            label: $t('CONVERSATION.CONTEXT_MENU.UNPIN'),
+          }"
+          variant="icon"
+          @click.stop="handleUnpinMessage"
         />
         <hr />
         <MenuItem

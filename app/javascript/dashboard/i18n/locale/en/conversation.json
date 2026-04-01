@@ -269,9 +269,22 @@
       "REMOVE": "Remove",
       "ASSIGN": "Assign"
     },
+    "PINNED_MESSAGES": {
+      "TITLE": "Pinned messages",
+      "EMPTY": "No pinned messages yet. Pin a message from the message menu.",
+      "UNAVAILABLE_NOTICE": "Some pinned messages are no longer available.",
+      "PIN_COUNT": "{count} pinned",
+      "VIEW_ALL": "View all",
+      "LOAD_CONTEXT_FAILED": "Could not load messages around this pin. Please try again.",
+      "UNKNOWN_SENDER": "Unknown sender",
+      "UNPIN_FAILED": "Could not unpin this message. Try again."
+    },
     "CONTEXT_MENU": {
       "COPY": "Copy",
       "REPLY_TO": "Reply to this message",
+      "PIN": "Pin message",
+      "UNPIN": "Unpin message",
+      "PIN_LIMIT_REACHED": "You can pin up to 20 messages in this conversation. Unpin one to add another.",
       "DELETE": "Delete",
       "CREATE_A_CANNED_RESPONSE": "Add to canned responses",
       "TRANSLATE": "Translate",

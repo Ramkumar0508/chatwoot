@@ -141,6 +141,7 @@ Rails.application.routes.draw do
               resource :participants, only: [:show, :create, :update, :destroy]
               resource :direct_uploads, only: [:create]
               resource :draft_messages, only: [:show, :update, :destroy]
+              resources :pinned_messages, only: [:index, :create, :destroy], param: :message_id
             end
             member do
               post :mute

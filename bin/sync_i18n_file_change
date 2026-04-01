@@ -34,7 +34,6 @@ if [ -n "$STAGED_EN_INDEX" ]; then
             cp "$SOURCE_FILE" "$dir"
 
             # Stage the copied file
-            git add "${dir}index.js"
 
             echo "Copied and staged index.js to $dir"
             COPIES_MADE=true

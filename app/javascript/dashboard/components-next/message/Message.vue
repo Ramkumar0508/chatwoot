@@ -1,5 +1,6 @@
 <script setup>
 import { onMounted, computed, ref, toRefs } from 'vue';
+import { useStore } from 'vuex';
 import { useTimeoutFn } from '@vueuse/core';
 import { provideMessageContext } from './provider.js';
 import { useTrack } from 'dashboard/composables';
@@ -137,6 +138,19 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['retry']);
+
+const store = useStore();
+
+const pinAccessDenied = computed(() =>
+  store.getters['pinnedMessages/isPinnedAccessDenied'](props.conversationId)
+);
+
+const isMessagePinnedFlag = computed(() =>
+  store.getters['pinnedMessages/isMessagePinned'](
+    props.conversationId,
+    props.id
+  )
+);
 
 const contextMenuPosition = ref({});
 const showBackgroundHighlight = ref(false);
@@ -373,6 +387,11 @@ const contextMenuEnabledOptions = computed(() => {
     props.status === MESSAGE_STATUS.FAILED ||
     props.status === MESSAGE_STATUS.PROGRESS;
 
+  const canPinContent =
+    !props.private &&
+    props.messageType !== MESSAGE_TYPES.ACTIVITY &&
+    (hasText || hasAttachments);
+
   return {
     copy: hasText,
     delete:
@@ -386,6 +405,18 @@ const contextMenuEnabledOptions = computed(() => {
       !props.private &&
       props.inboxSupportsReplyTo.outgoing &&
       !isFailedOrProcessing,
+    pin:
+      canPinContent &&
+      !isFailedOrProcessing &&
+      !isMessageDeleted.value &&
+      !pinAccessDenied.value &&
+      !isMessagePinnedFlag.value,
+    unpin:
+      canPinContent &&
+      !isFailedOrProcessing &&
+      !isMessageDeleted.value &&
+      !pinAccessDenied.value &&
+      isMessagePinnedFlag.value,
   };
 });
 

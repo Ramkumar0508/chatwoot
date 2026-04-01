@@ -13,6 +13,22 @@ class ConversationApi extends ApiClient {
   updateLabels(conversationID, labels) {
     return axios.post(`${this.url}/${conversationID}/labels`, { labels });
   }
+
+  getPinnedMessages(conversationId) {
+    return axios.get(`${this.url}/${conversationId}/pinned_messages`);
+  }
+
+  pinMessage(conversationId, messageId) {
+    return axios.post(`${this.url}/${conversationId}/pinned_messages`, {
+      message_id: messageId,
+    });
+  }
+
+  unpinMessage(conversationId, messageId) {
+    return axios.delete(
+      `${this.url}/${conversationId}/pinned_messages/${messageId}`
+    );
+  }
 }
 
 export default new ConversationApi();

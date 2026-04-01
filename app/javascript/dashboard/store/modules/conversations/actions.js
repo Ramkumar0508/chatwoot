@@ -103,6 +103,60 @@ const actions = {
     }
   },
 
+  fetchMessagesAround: async ({ commit }, { conversationId, messageId }) => {
+    const {
+      data: { meta, payload },
+    } = await MessageApi.getMessagesAround({
+      conversationId,
+      aroundMessageId: messageId,
+    });
+
+    commit(`conversationMetadata/${types.SET_CONVERSATION_METADATA}`, {
+      id: conversationId,
+      data: meta,
+    });
+    commit(types.CLEAR_ALL_MESSAGES_LOADED, conversationId);
+    commit(types.SET_MISSING_MESSAGES, {
+      id: conversationId,
+      data: payload,
+    });
+    commit(types.SET_CHAT_DATA_FETCHED, conversationId);
+  },
+
+  fetchNextMessages: async ({ commit, state }, { conversationId, after }) => {
+    const selectedChat = state.allConversations.find(c => c.id === conversationId);
+    if (!selectedChat) return;
+
+    const {
+      data: { meta, payload },
+    } = await MessageApi.getPreviousMessages({
+      conversationId,
+      after,
+    });
+
+    commit(`conversationMetadata/${types.SET_CONVERSATION_METADATA}`, {
+      id: conversationId,
+      data: meta,
+    });
+
+    if (!payload?.length) return;
+
+    const existingMessages = selectedChat.messages || [];
+    const merged = [...existingMessages];
+    payload.forEach(message => {
+      if (!merged.find(m => m.id === message.id)) merged.push(message);
+    });
+
+    const sortedMessages = merged.sort((a, b) => {
+      return new Date(a.created_at) - new Date(b.created_at);
+    });
+
+    commit(types.SET_MISSING_MESSAGES, {
+      id: conversationId,
+      data: sortedMessages,
+    });
+  },
+
   fetchAllAttachments: async ({ commit }, conversationId) => {
     let attachments = [];
 
@@ -190,6 +244,7 @@ const actions = {
   },
 
   async setActiveChat({ commit, dispatch }, { data, after }) {
+    dispatch('pinnedMessages/clear');
     commit(types.SET_CURRENT_CHAT_WINDOW, data);
     commit(types.CLEAR_ALL_MESSAGES_LOADED, data.id);
     if (data.dataFetched === undefined) {
@@ -207,7 +262,8 @@ const actions = {
   },
 
   fetchHandoffSummaryPreview: async (_, conversationId) => {
-    const response = await ConversationApi.getHandoffSummaryPreview(conversationId);
+    const response =
+      await ConversationApi.getHandoffSummaryPreview(conversationId);
     return response.data;
   },
 

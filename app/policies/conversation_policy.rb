@@ -11,6 +11,12 @@ class ConversationPolicy < ApplicationPolicy
     administrator? || agent_bot? || agent_can_view_conversation?
   end
 
+  def modify_message_pins?
+    return false if agent_bot?
+
+    show?
+  end
+
   private
 
   def agent_can_view_conversation?
