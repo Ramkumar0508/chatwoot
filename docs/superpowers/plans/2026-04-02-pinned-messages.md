@@ -21,8 +21,8 @@
 | `app/models/conversation.rb` | `has_many :conversation_message_pins, dependent: :destroy` |
 | `app/models/message.rb` | `has_many :conversation_message_pins, dependent: :destroy` |
 | `app/models/user.rb` | `has_many :conversation_message_pins, foreign_key: :pinned_by_id` (optional inverse) |
-| `app/services/conversation_message_pins/create_service.rb` | Validate eligibility, cap, create, dispatch event |
-| `app/services/conversation_message_pins/destroy_service.rb` | Nested lookup, destroy, dispatch event |
+| `app/services/conversation_message_pins/create_service.rb` | Validate eligibility, cap, create (Cable via **`ConversationMessagePin` `after_commit`**, not inside rolled-back transactions) |
+| `app/services/conversation_message_pins/destroy_service.rb` | Nested lookup, destroy (same **after_commit** / `after_destroy_commit` pattern) |
 | `app/presenters/conversation_message_pin_presenter.rb` (or helper module) | `push_event_data`, `text_preview` (plain, 200 chars) using patterns aligned with `Message#content_for_llm` / strip HTML |
 | `app/controllers/api/v1/accounts/conversations/pins_controller.rb` | `index`, `create`, `destroy` |
 | `app/views/api/v1/accounts/conversations/pins/*.json.jbuilder` | Index + create JSON |
@@ -39,8 +39,9 @@
 | `app/javascript/dashboard/i18n/locale/en/conversation.json` (or nested key file) | Copy for strip + menu + errors |
 | `config/locales/en.yml` | API error strings if using `I18n.t` in controllers |
 | `app/controllers/api/v1/accounts/conversations/messages_controller.rb` | Inside `destroy` transaction, `conversation_message_pins` for that message |
-| `spec/requests/api/v1/accounts/conversations/pins_spec.rb` (path may mirror project) | Request specs per spec |
+| `spec/controllers/api/v1/accounts/conversations/pins_controller_spec.rb` | Controller/request-style specs (matches `messages_controller_spec.rb`, `labels_controller_spec.rb`) |
 | `enterprise/app/listeners/enterprise/action_cable_listener.rb` | Only if Enterprise prepends listener—keep parity |
+| `enterprise/` (search) | Routes, `Api::V1::Accounts::Conversations::*`, `ConversationPolicy` / `prepend_mod_with`—mirror or extend so EE stays aligned |
 
 ---
 
@@ -52,13 +53,13 @@
 - Create: `app/models/conversation_message_pin.rb`
 - Modify: `app/models/conversation.rb`, `app/models/message.rb`, `app/models/user.rb` (inverse optional)
 
-- [ ] **Step 1:** Add migration: `account_id`, `conversation_id`, `message_id`, `pinned_by_id`, `pinned_at` (default `-> { Time.current }`), FKs, **unique index** `(conversation_id, message_id)`, index on `conversation_id`. Follow `db/schema.rb` style for FK targets.
+- [ ] **Step 1:** Add migration: `account_id`, `conversation_id`, `message_id`, `pinned_by_id`, `pinned_at` (default `-> { Time.current }`), FKs, **unique index** `(conversation_id, message_id)`, index on `conversation_id`. Follow `db/schema.rb` style for FK targets. For **`pinned_by_id`**, set **`on_delete: :nullify`** (and column **NULL allowed**) if that matches other audited `user_id` FKs in this app; otherwise **`restrict`**—grep `schema.rb` / `messages` / `notifications` for the prevailing pattern and **document the choice** in the migration comment.
 
 - [ ] **Step 2:** Run `bundle exec rails db:migrate`
 
   Expected: migration applies cleanly.
 
-- [ ] **Step 3:** Model: validations `presence` of associations; `belongs_to :account, :conversation, :message, :pinned_by, class_name: 'User'`; ensure `pinned_by_id` matches `Current.user` on create in service (not necessarily DB constraint).
+- [ ] **Step 3:** Model: validations `presence` of associations except **`pinned_by` optional** if FK nullifies on user delete; `belongs_to :account, :conversation, :message`; `belongs_to :pinned_by, class_name: 'User', optional: true` when using nullify; ensure `pinned_by_id` matches `Current.user` on create in service.
 
 - [ ] **Step 4:** Add `has_many :conversation_message_pins, dependent: :destroy` on `Conversation` and `Message`.
 
@@ -104,8 +105,8 @@ git commit -m "feat(conversations): pin create/destroy services and cleanup on m
 
 - [ ] **Step 1:** Implement `text_preview(message)`:
 
-  - Plain text: strip HTML/tags from `message.content` (e.g. `ActionController::Base.helpers.strip_tags` or project helper).
-  - If blank content but attachments, use a short literal consistent with product (e.g. `[Attachment]`—align with `Message#content_for_llm` spirit).
+  - **Do not invent a one-off stripper.** Before coding, read `app/services/messages/markdown_renderer_service.rb` (`render_plain_text` / channel-specific behavior), `Message#outgoing_content` / `MessageContentPresenter`, and `Messages::SearchDataPresenter` for how content and email subjects are surfaced. Pick **one** server-side path that stays closest to dashboard list previews (e.g. strip tags + optional markdown-to-plain if that is what notifications use).
+  - If blank content but attachments, use a short literal consistent with `Message#content_for_llm` / attachment placeholders.
   - **Truncate to 200** with ellipsis.
 
 - [ ] **Step 2:** `as_json` / `push_event_data` hash: `id`, `conversation_id`, `message_id`, `pinned_at`, `pinned_by` (minimal `user.push_event_data` or `{ id:, name:, avatar_url: }` per existing patterns), `text_preview`.
@@ -147,7 +148,9 @@ resources :pins, only: [:index, :create, :destroy], module: :conversations
 
 - [ ] **Step 5:** `destroy`: `pin = @conversation.conversation_message_pins.find(params[:id])` → `destroy` → `head :ok` or `204`.
 
-- [ ] **Step 6:** Commit
+- [ ] **Step 6:** (Optional) If your team keeps `swagger/` in sync with dashboard APIs, add paths for the nested `pins` endpoints; otherwise skip.
+
+- [ ] **Step 7:** Commit
 
 ```bash
 git add config/routes.rb app/controllers app/views config/locales/en.yml
@@ -162,17 +165,17 @@ git commit -m "feat(api): conversation pins index create destroy"
 
 - Modify: `lib/events/types.rb`
 - Modify: `app/listeners/action_cable_listener.rb`
-- Modify: `app/services/conversation_message_pins/create_service.rb` and `destroy_service.rb` (dispatch after commit)
+- Modify: `app/models/conversation_message_pin.rb` — add `after_commit` / `after_destroy_commit` dispatcher hooks (or dispatch from controller after the DB transaction completes—**pick one place only**)
 
 - [ ] **Step 1:** Add constants, e.g. `MESSAGE_PIN_CREATED = 'message.pin_created'`, `MESSAGE_PIN_DESTROYED = 'message.pin_destroyed'`.
 
-- [ ] **Step 2:** After successful create/destroy, `Rails.configuration.dispatcher.dispatch(EVENT, Time.zone.now, pin:, conversation:, account:)` (include only what listener needs).
+- [ ] **Step 2:** Dispatch **only after the DB change is committed** (no broadcast on rolled-back transactions). Prefer **`after_commit :broadcast_pin_created, on: :create`** and **`after_commit :broadcast_pin_destroyed, on: :destroy`** on `ConversationMessagePin`, **or** `after_destroy_commit`, calling `Rails.configuration.dispatcher.dispatch(...)` from there; alternatively dispatch from the controller **after** `transaction` completes—pick one pattern and use it for both create and destroy.
 
 - [ ] **Step 3:** Listener methods `message_pin_created`, `message_pin_destroyed`: tokens = `user_tokens(account, conversation.inbox.members)` only (dashboard agents; **do not** broadcast to contacts).
 
 - [ ] **Step 4:** Payload includes `account_id`, serialized pin data (use presenter), `conversation_id` as `display_id` if frontend expects `id` like other events—**match `message.created` shape** for `conversation` keys.
 
-- [ ] **Step 5:** Check `enterprise/app/listeners/enterprise/action_cable_listener.rb`; extend if Enterprise overrides broadcasts.
+- [ ] **Step 5:** Search **`enterprise/`** for overrides of **routes**, **`Api::V1::Accounts::Conversations::*`**, **`ConversationPolicy`**, and **`ActionCableListener`**; mirror or extend so OSS and EE stay aligned.
 
 - [ ] **Step 6:** Commit
 
@@ -183,23 +186,23 @@ git commit -m "feat(cable): broadcast conversation message pin events"
 
 ---
 
-### Task 6: Request specs
+### Task 6: Controller specs
 
 **Files:**
 
-- Create: `spec/requests/api/v1/accounts/conversations/pins_spec.rb` (adjust path to match existing `spec/requests` layout)
+- Create: `spec/controllers/api/v1/accounts/conversations/pins_controller_spec.rb` (same style as `spec/controllers/api/v1/accounts/conversations/messages_controller_spec.rb`)
 
 - [ ] **Step 1:** Cover: index success; create success; create duplicate → `422` or `409`; create activity message → `422`; create over cap → `422`; destroy success; destroy pin from **other** conversation → `404`; unauthorized user → `403`/`401` per app; index **omits** private-note pin when testing a user without access (construct fixture that proves redaction path, or document skip if identical RBAC).
 
-- [ ] **Step 2:** Run `bundle exec rspec spec/requests/api/v1/accounts/conversations/pins_spec.rb`
+- [ ] **Step 2:** Run `bundle exec rspec spec/controllers/api/v1/accounts/conversations/pins_controller_spec.rb`
 
   Expected: all pass.
 
 - [ ] **Step 3:** Commit
 
 ```bash
-git add spec/requests
-git commit -m "test(api): conversation pins request specs"
+git add spec/controllers/api/v1/accounts/conversations/pins_controller_spec.rb
+git commit -m "test(api): conversation pins controller specs"
 ```
 
 ---
@@ -263,7 +266,7 @@ git commit -m "feat(dashboard): pinned messages strip and jump-to"
 
 - Modify: `app/javascript/dashboard/modules/conversations/components/MessageContextMenu.vue`
 - Modify: `app/javascript/dashboard/components-next/message/Message.vue`
-- Possibly: `app/javascript/dashboard/components-next/message/MessageList.vue` (pass pin state)
+- Modify: `app/javascript/dashboard/components-next/message/MessageList.vue` (pass pin state—this is the list `MessagesView` imports as `next/message/MessageList.vue`; do not confuse with other `MessageList` components e.g. Captain)
 
 - [ ] **Step 1:** Vuex getter or prop: **is message pinned** + `pinId` for current conversation (derive from `conversationPins` by `message_id`).
 
@@ -286,7 +289,7 @@ git commit -m "feat(dashboard): pin and unpin from message context menu"
 
 - [ ] **Step 2:** `pnpm eslint` / `pnpm eslint:fix` on changed JS/Vue.
 
-- [ ] **Step 3:** `bundle exec rspec spec/requests/api/v1/accounts/conversations/pins_spec.rb`
+- [ ] **Step 3:** `bundle exec rspec spec/controllers/api/v1/accounts/conversations/pins_controller_spec.rb`
 
 - [ ] **Step 4:** Manual smoke: two browser sessions, pin/unpin, jump, soft-delete message removes pin from strip.
 
