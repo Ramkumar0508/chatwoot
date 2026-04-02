@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_02_26_153427) do
+ActiveRecord::Schema[7.1].define(version: 2026_04_02_120000) do
   # These extensions should be enabled to support this database
   enable_extension "pg_stat_statements"
   enable_extension "pg_trgm"
@@ -640,6 +640,18 @@ ActiveRecord::Schema[7.1].define(version: 2026_02_26_153427) do
     t.index ["identifier", "account_id"], name: "uniq_identifier_per_account_contact", unique: true
     t.index ["name", "email", "phone_number", "identifier"], name: "index_contacts_on_name_email_phone_number_identifier", opclass: :gin_trgm_ops, using: :gin
     t.index ["phone_number", "account_id"], name: "index_contacts_on_phone_number_and_account_id"
+  end
+
+  create_table "conversation_message_pins", force: :cascade do |t|
+    t.integer "account_id", null: false
+    t.integer "conversation_id", null: false
+    t.integer "message_id", null: false
+    t.integer "pinned_by_id"
+    t.datetime "pinned_at", default: -> { "CURRENT_TIMESTAMP" }, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["conversation_id", "message_id"], name: "idx_conv_message_pins_on_conv_id_and_msg_id", unique: true
+    t.index ["conversation_id"], name: "idx_conv_message_pins_on_conv_id"
   end
 
   create_table "conversation_participants", force: :cascade do |t|
@@ -1272,6 +1284,10 @@ ActiveRecord::Schema[7.1].define(version: 2026_02_26_153427) do
 
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
+  add_foreign_key "conversation_message_pins", "accounts"
+  add_foreign_key "conversation_message_pins", "conversations"
+  add_foreign_key "conversation_message_pins", "messages"
+  add_foreign_key "conversation_message_pins", "users", column: "pinned_by_id", on_delete: :nullify
   add_foreign_key "inboxes", "portals"
   create_trigger("accounts_after_insert_row_tr", :generated => true, :compatibility => 1).
       on("accounts").

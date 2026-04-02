@@ -107,6 +107,7 @@ class Conversation < ApplicationRecord
   belongs_to :campaign, optional: true
 
   has_many :mentions, dependent: :destroy_async
+  has_many :conversation_message_pins, dependent: :destroy
   has_many :messages, dependent: :destroy_async, autosave: true
   has_one :csat_survey_response, dependent: :destroy_async
   has_many :conversation_participants, dependent: :destroy_async
