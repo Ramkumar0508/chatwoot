@@ -1,4 +1,18 @@
 class Conversations::AssignmentService
+  class << self
+    def create_handoff_note(conversation:, content:, sender:)
+      conversation.messages.create!(
+        account: conversation.account,
+        inbox: conversation.inbox,
+        sender: sender,
+        message_type: :outgoing,
+        content: content,
+        private: true,
+        content_attributes: { handoff_summary: true }
+      )
+    end
+  end
+
   def initialize(conversation:, assignee_id:, assignee_type: nil)
     @conversation = conversation
     @assignee_id = assignee_id

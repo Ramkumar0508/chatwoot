@@ -206,11 +206,20 @@ const actions = {
     }
   },
 
-  assignAgent: async ({ dispatch }, { conversationId, agentId }) => {
+  fetchHandoffSummaryPreview: async (_, conversationId) => {
+    const response = await ConversationApi.getHandoffSummaryPreview(conversationId);
+    return response.data;
+  },
+
+  assignAgent: async (
+    { dispatch },
+    { conversationId, agentId, handoffSummary }
+  ) => {
     try {
       const response = await ConversationApi.assignAgent({
         conversationId,
         agentId,
+        handoffSummary,
       });
       dispatch('setCurrentChatAssignee', {
         conversationId,
@@ -225,11 +234,15 @@ const actions = {
     commit(types.ASSIGN_AGENT, { conversationId, assignee });
   },
 
-  assignTeam: async ({ dispatch }, { conversationId, teamId }) => {
+  assignTeam: async (
+    { dispatch },
+    { conversationId, teamId, handoffSummary }
+  ) => {
     try {
       const response = await ConversationApi.assignTeam({
         conversationId,
         teamId,
+        handoffSummary,
       });
       dispatch('setCurrentChatTeam', { team: response.data, conversationId });
     } catch (error) {

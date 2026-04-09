@@ -62,14 +62,19 @@ class ConversationApi extends ApiClient {
     });
   }
 
-  assignAgent({ conversationId, agentId }) {
-    return axios.post(`${this.url}/${conversationId}/assignments`, {
-      assignee_id: agentId,
-    });
+  getHandoffSummaryPreview(conversationId) {
+    return axios.post(`${this.url}/${conversationId}/handoff_summary`, {});
   }
 
-  assignTeam({ conversationId, teamId }) {
+  assignAgent({ conversationId, agentId, handoffSummary }) {
+    const body = { assignee_id: agentId };
+    if (handoffSummary) body.handoff_summary = handoffSummary;
+    return axios.post(`${this.url}/${conversationId}/assignments`, body);
+  }
+
+  assignTeam({ conversationId, teamId, handoffSummary }) {
     const params = { team_id: teamId };
+    if (handoffSummary) params.handoff_summary = handoffSummary;
     return axios.post(`${this.url}/${conversationId}/assignments`, params);
   }
 

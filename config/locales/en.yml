@@ -222,6 +222,12 @@ en:
   conversations:
     captain:
       handoff: 'Transferring to another agent for further assistance.'
+    handoff_summary:
+      label: 'AI-generated handoff summary'
+      error: 'Summary could not be generated. You can still transfer without a summary.'
+      limited_context: 'Limited context: not enough messages to generate a full summary.'
+      generating: 'Generating handoff summary...'
+      ai_generated_note: '(AI-generated)'
     messages:
       instagram_story_content: '%{story_sender} mentioned you in the story: '
       instagram_deleted_story_content: This story is no longer available.

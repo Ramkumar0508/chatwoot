@@ -10,6 +10,8 @@ import { CONVERSATION_PRIORITY } from '../../../../shared/constants/messages';
 import { CONVERSATION_EVENTS } from '../../../helper/AnalyticsHelper/events';
 import { useTrack } from 'dashboard/composables';
 import NextButton from 'dashboard/components-next/button/Button.vue';
+import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
+import Button from 'dashboard/components-next/button/Button.vue';
 
 export default {
   components: {
@@ -17,6 +19,8 @@ export default {
     MultiselectDropdown,
     ConversationLabels,
     NextButton,
+    Dialog,
+    Button,
   },
   props: {
     conversationId: {
@@ -32,6 +36,13 @@ export default {
   },
   data() {
     return {
+      transferModal: {
+        visible: false,
+        pending: null,
+        summary: null,
+        error: null,
+        loading: false,
+      },
       priorityOptions: [
         {
           id: null,
@@ -93,6 +104,7 @@ export default {
           .dispatch('assignAgent', {
             conversationId: this.currentChat.id,
             agentId,
+            handoffSummary: null,
           })
           .then(() => {
             useAlert(this.$t('CONVERSATION.CHANGE_AGENT'));
@@ -106,9 +118,17 @@ export default {
       set(team) {
         const conversationId = this.currentChat.id;
         const teamId = team ? team.id : 0;
-        this.$store.dispatch('setCurrentChatTeam', { team, conversationId });
+        this.$store.dispatch('setCurrentChatTeam', {
+          team,
+          conversationId,
+          handoffSummary: null,
+        });
         this.$store
-          .dispatch('assignTeam', { conversationId, teamId })
+          .dispatch('assignTeam', {
+            conversationId,
+            teamId,
+            handoffSummary: null,
+          })
           .then(() => {
             useAlert(this.$t('CONVERSATION.CHANGE_TEAM'));
           });
@@ -182,19 +202,107 @@ export default {
       };
       this.assignedAgent = selfAssign;
     },
-    onClickAssignAgent(selectedItem) {
+    async onClickAssignAgent(selectedItem) {
       if (this.assignedAgent && this.assignedAgent.id === selectedItem.id) {
         this.assignedAgent = null;
-      } else {
-        this.assignedAgent = selectedItem;
+        return;
+      }
+      this.transferModal.pending = { type: 'agent', agent: selectedItem };
+      this.transferModal.visible = true;
+      this.transferModal.loading = true;
+      this.transferModal.summary = null;
+      this.transferModal.error = null;
+      this.$nextTick(() => this.$refs.handoffDialog?.open());
+      try {
+        const data = await this.$store.dispatch(
+          'fetchHandoffSummaryPreview',
+          this.currentChat.id
+        );
+        this.transferModal.summary = data.summary ?? null;
+        this.transferModal.error = data.error ?? null;
+      } catch (_) {
+        this.transferModal.error = this.$t(
+          'HANDOFF_SUMMARY.ERROR'
+        );
+      } finally {
+        this.transferModal.loading = false;
       }
     },
 
-    onClickAssignTeam(selectedItemTeam) {
-      if (this.assignedTeam && this.assignedTeam.id === selectedItemTeam.id) {
+    async onClickAssignTeam(selectedItemTeam) {
+      if (
+        selectedItemTeam.id === 0 ||
+        (this.assignedTeam && this.assignedTeam.id === selectedItemTeam.id)
+      ) {
         this.assignedTeam = null;
+        return;
+      }
+      this.transferModal.pending = { type: 'team', team: selectedItemTeam };
+      this.transferModal.visible = true;
+      this.transferModal.loading = true;
+      this.transferModal.summary = null;
+      this.transferModal.error = null;
+      this.$nextTick(() => this.$refs.handoffDialog?.open());
+      try {
+        const data = await this.$store.dispatch(
+          'fetchHandoffSummaryPreview',
+          this.currentChat.id
+        );
+        this.transferModal.summary = data.summary ?? null;
+        this.transferModal.error = data.error ?? null;
+      } catch (_) {
+        this.transferModal.error = this.$t(
+          'HANDOFF_SUMMARY.ERROR'
+        );
+      } finally {
+        this.transferModal.loading = false;
+      }
+    },
+
+    closeTransferModal() {
+      this.transferModal.visible = false;
+      this.transferModal.pending = null;
+      this.transferModal.summary = null;
+      this.transferModal.error = null;
+    },
+
+    confirmTransfer(withSummary = true) {
+      const { pending } = this.transferModal;
+      if (!pending) return;
+      const handoffSummary =
+        withSummary && this.transferModal.summary
+          ? this.transferModal.summary
+          : null;
+      if (pending.type === 'agent') {
+        this.$store.dispatch('setCurrentChatAssignee', {
+          conversationId: this.currentChat.id,
+          assignee: pending.agent,
+        });
+        this.$store
+          .dispatch('assignAgent', {
+            conversationId: this.currentChat.id,
+            agentId: pending.agent.id,
+            handoffSummary,
+          })
+          .then(() => {
+            useAlert(this.$t('CONVERSATION.CHANGE_AGENT'));
+            this.closeTransferModal();
+          });
       } else {
-        this.assignedTeam = selectedItemTeam;
+        this.$store.dispatch('setCurrentChatTeam', {
+          team: pending.team,
+          conversationId: this.currentChat.id,
+        });
+        this.$store
+          .dispatch('assignTeam', {
+            conversationId: this.currentChat.id,
+            teamId: pending.team.id,
+            handoffSummary,
+          })
+          .then(() => {
+            useAlert(this.$t('CONVERSATION.CHANGE_TEAM'));
+            this.closeTransferModal();
+          });
       }
     },
 
@@ -284,5 +392,60 @@ export default {
       :title="$t('CONVERSATION_SIDEBAR.ACCORDION.CONVERSATION_LABELS')"
     />
     <ConversationLabels :conversation-id="conversationId" />
+
+    <Dialog
+      v-if="transferModal.visible"
+      ref="handoffDialog"
+      type="edit"
+      width="lg"
+      overflow-y-auto
+      :title="$t('HANDOFF_SUMMARY.TITLE')"
+      :show-confirm-button="false"
+      :show-cancel-button="false"
+      @close="closeTransferModal"
+    >
+      <div class="flex flex-col gap-3 text-sm">
+        <p
+          v-if="transferModal.loading"
+          class="text-n-slate-11"
+        >
+          {{ $t('HANDOFF_SUMMARY.GENERATING') }}
+        </p>
+        <p
+          v-else-if="transferModal.error"
+          class="text-n-ruby-11"
+        >
+          {{ transferModal.error }}
+        </p>
+        <div
+          v-else-if="transferModal.summary"
+          class="rounded-md bg-n-slate-2 p-3 text-n-slate-12 whitespace-pre-wrap max-h-48 overflow-y-auto"
+        >
+          {{ transferModal.summary }}
+        </div>
+        <p
+          v-else
+          class="text-n-slate-11"
+        >
+          {{ $t('HANDOFF_SUMMARY.LIMITED_CONTEXT') }}
+        </p>
+      </div>
+      <template #footer>
+        <div class="flex w-full gap-3 justify-end">
+          <Button
+            variant="faded"
+            color="slate"
+            :label="$t('HANDOFF_SUMMARY.CANCEL')"
+            @click="closeTransferModal"
+          />
+          <Button
+            color="blue"
+            :label="$t('HANDOFF_SUMMARY.CONFIRM_TRANSFER')"
+            :disabled="transferModal.loading"
+            @click="confirmTransfer(true)"
+          />
+        </div>
+      </template>
+    </Dialog>
   </div>
 </template>
